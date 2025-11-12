@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Faculty Search</title>
+  <style>
+    /* Loading overlay styles */
+    .loading-overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 9999;
+      backdrop-filter: blur(2px);
+    }
+
+    .loading-box {
+      background: #fff;
+      padding: 18px 20px;
+      border-radius: 10px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      max-width: 320px;
+      width: 90%;
+      text-align: left;
+    }
+
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 4px solid #e0e0e0;
+      border-top-color: #0d47a1;
+      animation: spin 0.9s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .loading-text {
+      color: #333;
+      font-size: 15px;
+    }
+
+    /* Base Styles */
+    body {
+      font-family: "Poppins", sans-serif;
+      text-align: center;
+      margin: 0;
+      background: linear-gradient(135deg, #e3f2fd, #ffffff);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      overflow-x: hidden;
+      padding-bottom: 50px;
+    }
+
+    /* Header */
+    header {
+      position: relative;
+      width: 100%;
+      height: 60px;
+      background: #0d47a1;
+      color: white;
+      padding: 30px 0 50px 0;
+      /* reduced padding */
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      overflow: visible;
+    }
+
+    header img {
+      position: absolute;
+      top: 20px;
+      width: 100px;
+      height: 100px;
+    }
+
+    header img.left {
+      left: 40px;
+    }
+
+    header img.right {
+      right: 40px;
+    }
+
+    h1 {
+      font-size: 2rem;
+      margin: 0;
+      letter-spacing: 1px;
+    }
+
+    /* Form Card */
+    form {
+      margin-top: 30px;
+      /* Slight overlap with header for modern look */
+      background: white;
+      padding: 30px 25px 50px 25px;
+      border-radius: 16px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+      width: 90%;
+      max-width: 500px;
+      overflow: visible;
+      transition: all 0.3s ease;
+    }
+
+    /* Radio Buttons */
+    .form-check {
+      margin: 6px 8px;
+      /* reduced spacing */
+      display: inline-block;
+    }
+
+    .form-check-input {
+      margin-right: 5px;
+    }
+
+    .form-check-label {
+      font-size: 15px;
+      /* slightly smaller */
+      cursor: pointer;
+    }
+
+    input[type="radio"] {
+      margin: 0 3px;
+      accent-color: #0d47a1;
+      cursor: pointer;
+    }
+
+    /* Input Group */
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 15px;
+      margin-top: 20px;
+      position: relative;
+      width: 100%;
+    }
+
+    input[type="text"],
+    select {
+      padding: 12px 14px;
+      /* slightly smaller padding */
+      width: 100%;
+      font-size: 15px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+    }
+
+    select {
+      appearance: none;
+      /* Remove default arrow */
+      background: white url('data:image/svg+xml;charset=US-ASCII,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="8"><path fill="none" stroke="%230d47a1" stroke-width="2" d="M1 1l6 6 6-6"/></svg>') no-repeat right 14px center;
+      background-size: 12px 8px;
+      cursor: pointer;
+    }
+
+    input[type="text"]:focus,
+    select:focus {
+      border-color: #0d47a1;
+      outline: none;
+      box-shadow: 0 0 8px rgba(13, 71, 161, 0.3);
+    }
+
+    input[type="submit"] {
+      padding: 12px 25px;
+      font-size: 16px;
+      cursor: pointer;
+      background: #0d47a1;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      transition: 0.3s ease;
+      margin-top: 20px;
+      width: 60%;
+    }
+
+    input[type="submit"]:hover {
+      background: #1565c0;
+    }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      header img {
+        width: 60px;
+        height: 60px;
+      }
+
+      h1 {
+        font-size: 1.5rem;
+      }
+
+      form {
+        padding: 20px 15px 40px 15px;
+      }
+
+      input[type="submit"] {
+        width: 80%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <img src="{{ url_for('static', filename='WhatsApp Image 2025-10-23 at 4.34.07 PM.jpeg') }}" alt="Left Logo"
+      class="left">
+    <h1>Chat Bot Web Crawler</h1>
+    <img src="{{ url_for('static', filename='image.png') }}" alt="Right Logo" class="right">
+  </header>
+
+  <form action="/search" method="post">
+    <!-- Radio Buttons -->
+    <div class="form-check">
+      <input class="form-check-input" type="radio" name="search_type" value="keyword" id="keyword_search" checked>
+      <label class="form-check-label" for="keyword_search">Keyword</label>
+    </div>
+    <div class="form-check">
+      <input class="form-check-input" type="radio" name="search_type" value="name" id="name_search">
+      <label class="form-check-label" for="name_search">Name</label>
+    </div>
+    <div class="form-check">
+      <input class="form-check-input" type="radio" name="search_type" value="vidwan" id="vidwan_search">
+      <label class="form-check-label" for="vidwan_search">Vidwan</label>
+    </div>
+
+    <!-- Input + Dropdown -->
+    <div class="input-group">
+      <input type="text" name="keyword" placeholder="Enter keyword or name or Vidwan-ID">
+      <select name="institution">
+        <option value="all">All Institutions</option>
+        <option value="IITM">IITM</option>
+        <option value="IITH">IITH</option>
+        <option value="IITI">IIT Indore</option>
+        <option value="IITP">IIT Patna</option>
+        <option value="IISCPROFILES">IISC</option>
+        <option value="IITK">IIT Kanpur</option>
+        <option value="IITD">IIT Delhi</option>
+        <option value="IITR">IIT Roorkee</option>
+        <option value="IISERB">IISER Bhopal</option>
+        <option value="IITTP">IIT Tirupati</option>
+        <option value="IISERMOHALI">IISER Mohali</option>
+        <option value="IITJAMMU">IIT Jammu</option>
+        <option value="RRIT">RRIT</option>
+        <option value="HRI">HRI</option>
+        <option value="IITBHILAI">IIT Bhilai</option>
+        <option value="IITKGP">IIT Kharagpur</option>
+      </select>
+    </div>
+
+    <input type="submit" value="Search">
+  </form>
+
+  <!-- Loading overlay -->
+  <div id="loadingOverlay" class="loading-overlay" role="status" aria-live="polite">
+    <div class="loading-box">
+      <div class="spinner" aria-hidden="true"></div>
+      <div class="loading-text">Loading... Please wait while we crawl profiles.</div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const overlay = document.getElementById('loadingOverlay');
+
+      function showOverlay() {
+        if (overlay) overlay.style.display = 'flex';
+      }
+
+      function hideOverlay() {
+        if (overlay) overlay.style.display = 'none';
+      }
+
+      // Show overlay when the form is submitted
+      const form = document.querySelector('form');
+      if (form) {
+        form.addEventListener('submit', function () {
+          showOverlay();
+        });
+      }
+
+      // Hide overlay when page unload completes (safety)
+      window.addEventListener('pageshow', function () {
+        hideOverlay();
+      });
+    })();
+  </script>
+</body>
+
+</html>

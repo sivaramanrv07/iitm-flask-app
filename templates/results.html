@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Faculty Search Results</title>
+    <!-- Highcharts library -->
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <script src="https://code.highcharts.com/modules/exporting.js"></script>
+    <script src="https://code.highcharts.com/modules/export-data.js"></script>
+    <script src="https://code.highcharts.com/modules/accessibility.js"></script>
+    <style>
+        /* Loading overlay styles */
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.45);
+            z-index: 9999;
+            backdrop-filter: blur(2px);
+        }
+
+        .loading-box {
+            background: #fff;
+            padding: 16px 18px;
+            border-radius: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+            max-width: 360px;
+            width: 88%;
+        }
+
+        .spinner {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            border: 4px solid #e0e0e0;
+            border-top-color: #0d47a1;
+            animation: spin 0.9s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .loading-text {
+            color: #333;
+            font-size: 15px;
+        }
+
+        body {
+            font-family: "Poppins", sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .controls {
+            margin-bottom: 30px;
+            text-align: center;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .controls a {
+            text-decoration: none;
+            color: white;
+            padding: 12px 25px;
+            border-radius: 5px;
+            margin: 0 10px;
+            display: inline-block;
+            transition: transform 0.2s, background-color 0.2s;
+        }
+
+        .download-btn {
+            background-color: #28a745;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .download-btn:hover {
+            background-color: #218838;
+            transform: translateY(-2px);
+        }
+
+        .back-btn {
+            background-color: #0066cc;
+        }
+
+        .back-btn:hover {
+            background-color: #0056b3;
+        }
+
+        .download-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .loading {
+            display: none;
+            margin: 10px auto;
+        }
+
+        .loading:after {
+            content: "⏳";
+            animation: loading 1s infinite;
+        }
+
+        @keyframes loading {
+            0% {
+                content: "⏳";
+            }
+
+            50% {
+                content: "⌛";
+            }
+        }
+
+        .error-message {
+            color: #dc3545;
+            text-align: center;
+            margin: 10px 0;
+            display: none;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th,
+        td {
+            padding: 15px;
+            border: 1px solid #eee;
+            text-align: left;
+        }
+
+        th {
+            background-color: #0066cc;
+            color: white;
+            font-weight: 500;
+        }
+
+        tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        a {
+            color: #0066cc;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .result-count {
+            text-align: center;
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        .search-summary {
+            text-align: center;
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #333;
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            display: inline-block;
+        }
+
+        .back-to-top {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #0066cc;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            text-decoration: none;
+            display: none;
+            /* Initially hidden */
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Chat Bot Web Crawler</h1>
+
+    <div class="search-summary">
+        Showing results for "<strong>{{ keyword }}</strong>" (as <em>{{ search_type }}</em>) in <em>{{ institution
+            }}</em>
+    </div>
+
+    <!-- Loading overlay (global) -->
+    <div id="loadingOverlay" class="loading-overlay" role="status" aria-live="polite">
+        <div class="loading-box">
+            <div class="spinner" aria-hidden="true"></div>
+            <div class="loading-text">Preparing download / loading results... please wait.</div>
+        </div>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div id="loading" style="display: none; text-align: center; padding: 20px;">
+        <p>Loading... please wait.</p>
+    </div>
+
+    <div class="controls">
+        {% if results %}
+        <div class="download-container">
+            <a href="/download" class="download-btn" id="downloadBtn">
+                📥 Download Results as Excel
+            </a>
+            <div class="loading" id="loadingIndicator"></div>
+            <div class="error-message" id="errorMessage"></div>
+        </div>
+        {% endif %}
+        <a href="/" class="back-btn">← Back to Search</a>
+    </div>
+
+    <div class="result-count">
+        {% if results %}
+        <strong>Found {{ results|length }} results</strong>
+        {% else %}
+        <strong>No results found.</strong>
+        {% endif %}
+    </div>
+
+    <script>
+        // Hide loading indicator and show results when the page is loaded
+        window.addEventListener('load', function () {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('results-table').style.display = 'table';
+        });
+
+        window.addEventListener('scroll', function () {
+            var backToTopButton = document.querySelector('.back-to-top');
+            if (window.scrollY > 300) {
+                backToTopButton.style.display = 'block';
+            } else {
+                backToTopButton.style.display = 'none';
+            }
+        });
+
+        // Show global overlay when clicking download so user sees progress
+        (function () {
+            const overlay = document.getElementById('loadingOverlay');
+            const downloadBtn = document.getElementById('downloadBtn');
+            function showOverlay() { if (overlay) overlay.style.display = 'flex'; }
+            if (downloadBtn) {
+                downloadBtn.addEventListener('click', function () {
+                    // show overlay while server prepares the file
+                    showOverlay();
+                });
+            }
+            // also show overlay if user navigates away from the page (safety)
+            window.addEventListener('beforeunload', function () { if (overlay) overlay.style.display = 'flex'; });
+        })();
+    </script>
+
+    {% if results %}
+    <table id="results-table" style="display: none;">
+        <thead>
+            <tr>
+                <th>Institution</th>
+                <th>Name</th>
+                <th>Department</th>
+                <th>Vidwan-ID</th>
+                <th>Profile URL</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for result in results %}
+            <tr>
+                <td>{{ result.Institution }}</td>
+                <td>{{ result.Name }}</td>
+                <td>{{ result.Department }}</td>
+                <td>{{ result['Vidwan-ID'] }}</td>
+                <td><a href="{{ result['Profile URL'] }}" target="_blank">{{ result['Profile URL'] }}</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="error-message" style="display: block;">
+        {{ message or error or 'No results found.' }}
+    </div>
+    {% endif %}
+
+    <a href="#" class="back-to-top">↑</a>
+</body>
+
+</html>
