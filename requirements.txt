@@ -9,3 +9,4 @@ backoff
 webdriver-manager
 lxml
 nest_asyncio
+chromedriver-autoinstaller
