@@ -2,6 +2,7 @@ services:
   - type: web
     name: iitm-flask-app
     env: python
+    plan: free
     buildCommand: |
       apt-get update
       apt-get install -y wget unzip xvfb libxi6 libgconf-2-4
@@ -9,4 +10,3 @@ services:
       apt install -y ./google-chrome-stable_current_amd64.deb
       pip install -r requirements.txt
     startCommand: gunicorn app:app
-    plan: free

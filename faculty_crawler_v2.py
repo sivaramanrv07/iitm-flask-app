@@ -465,7 +465,34 @@ def setup_driver(self):
     driver.set_script_timeout(30)
     driver.implicitly_wait(10)
     return driver
+def setup_driver(self):
+    import chromedriver_autoinstaller
+    chromedriver_autoinstaller.install()
 
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-notifications")
+    options.add_argument("--disable-popup-blocking")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--window-size=1920x1080")
+
+    # ✅ Tell Selenium exactly where Chrome is located in Render
+    options.binary_location = "/usr/bin/google-chrome"
+
+    prefs = {
+        'profile.managed_default_content_settings.images': 2,
+        'profile.default_content_settings.popups': 0,
+        'profile.default_content_setting_values.notifications': 2
+    }
+    options.add_experimental_option('prefs', prefs)
+
+    driver = webdriver.Chrome(service=Service(), options=options)
+    driver.set_script_timeout(30)
+    driver.implicitly_wait(10)
+    return driver
 
 if __name__ == "__main__":
     main()

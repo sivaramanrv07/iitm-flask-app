@@ -68,66 +68,84 @@
 
     /* Header */
     header {
-      position: relative;
       width: 100%;
-      height: 60px;
       background: #0d47a1;
       color: white;
-      padding: 30px 0 50px 0;
-      /* reduced padding */
+      padding: 20px;
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-      overflow: visible;
+      display: flex;
+      justify-content: center;
     }
 
+    .header-container {
+      width: 100%;
+      max-width: 1200px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 40px;
+      flex-wrap: wrap; /* ✅ makes it responsive */
+      gap: 15px;
+    }
+
+    .header-text {
+      text-align: center;
+      flex: 1;
+      min-width: 220px;
+    }
+
+    /* Equal-size responsive images */
     header img {
-      position: absolute;
-      top: 20px;
-      width: 100px;
-      height: 100px;
+      width: 110px;
+      height: 110px;
+      /* object-fit: contain; */
+      align-items: center;
+      transition: transform 0.3s ease;
+      max-width: 30vw; /* ✅ prevents overflow on small screens */
     }
 
-    header img.left {
-      left: 40px;
+    header img:hover {
+      transform: scale(1.05);
     }
 
-    header img.right {
-      right: 40px;
-    }
-
-    h1 {
+    header h1 {
       font-size: 2rem;
-      margin: 0;
+      margin: 5px 0;
       letter-spacing: 1px;
     }
 
+    header p.tagline {
+      font-size: 1rem;
+      margin: 0;
+      font-weight: 400;
+      color: #cfd8dc;
+    }
+
+    
+
     /* Form Card */
     form {
-      margin-top: 30px;
-      /* Slight overlap with header for modern look */
+      margin-top: 40px;
       background: white;
       padding: 30px 25px 50px 25px;
       border-radius: 16px;
       box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
       width: 90%;
       max-width: 500px;
-      overflow: visible;
       transition: all 0.3s ease;
+      z-index: 10;
     }
 
     /* Radio Buttons */
     .form-check {
       margin: 6px 8px;
-      /* reduced spacing */
       display: inline-block;
     }
 
-    .form-check-input {
-      margin-right: 5px;
-    }
+    
 
     .form-check-label {
       font-size: 15px;
-      /* slightly smaller */
       cursor: pointer;
     }
 
@@ -144,14 +162,12 @@
       align-items: center;
       gap: 15px;
       margin-top: 20px;
-      position: relative;
       width: 100%;
     }
 
     input[type="text"],
     select {
       padding: 12px 14px;
-      /* slightly smaller padding */
       width: 100%;
       font-size: 15px;
       border: 1px solid #ccc;
@@ -162,7 +178,6 @@
 
     select {
       appearance: none;
-      /* Remove default arrow */
       background: white url('data:image/svg+xml;charset=US-ASCII,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="8"><path fill="none" stroke="%230d47a1" stroke-width="2" d="M1 1l6 6 6-6"/></svg>') no-repeat right 14px center;
       background-size: 12px 8px;
       cursor: pointer;
@@ -192,23 +207,95 @@
       background: #1565c0;
     }
 
+    /* About Section */
+    .about {
+      margin-top: 40px;
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 25px 30px;
+      width: 90%;
+      max-width: 700px;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+      line-height: 1.6;
+    }
+
+    .about h2 {
+      color: #0d47a1;
+      font-size: 1.4rem;
+      margin-bottom: 10px;
+    }
+
+    .about p {
+      color: #333;
+      font-size: 15px;
+      margin: 0;
+    }
+
     /* Responsive */
-    @media (max-width: 600px) {
-      header img {
-        width: 60px;
-        height: 60px;
+    @media (max-width: 992px) {
+      .header-container {
+        padding: 0 20px;
       }
 
-      h1 {
-        font-size: 1.5rem;
+      header img {
+        width: 90px;
+        height: 90px;
+      }
+
+      header h1 {
+        font-size: 1.8rem;
+      }
+    }
+
+    @media (max-width: 768px) {
+      header img {
+        width: 80px;
+        height: 80px;
+      }
+
+      header h1 {
+        font-size: 1.6rem;
+      }
+
+      header p.tagline {
+        font-size: 0.9rem;
       }
 
       form {
-        padding: 20px 15px 40px 15px;
+        padding: 25px 15px 40px 15px;
       }
 
       input[type="submit"] {
         width: 80%;
+      }
+
+      .about {
+        padding: 20px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .header-container {
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+      }
+
+      header img {
+        width: 70px;
+        height: 70px;
+      }
+
+      header h1 {
+        font-size: 1.5rem;
+      }
+
+      header p.tagline {
+        font-size: 0.85rem;
+      }
+
+      form {
+        width: 95%;
       }
     }
   </style>
@@ -216,14 +303,17 @@
 
 <body>
   <header>
-    <img src="{{ url_for('static', filename='WhatsApp Image 2025-10-23 at 4.34.07 PM.jpeg') }}" alt="Left Logo"
-      class="left">
-    <h1>Chat Bot Web Crawler</h1>
-    <img src="{{ url_for('static', filename='image.png') }}" alt="Right Logo" class="right">
+    <div class="header-container">
+      <img src="{{ url_for('static', filename='WhatsApp Image 2025-10-23 at 4.34.07 PM.jpeg') }}" alt="Left Logo" class="left">
+      <div class="header-text">
+        <h1>Q-Connect</h1>
+        <p class="tagline">Your Gateway to Quantum Expertise</p>
+      </div>
+      <img src="{{ url_for('static', filename='image.png') }}" alt="Right Logo" class="right">
+    </div>
   </header>
 
   <form action="/search" method="post">
-    <!-- Radio Buttons -->
     <div class="form-check">
       <input class="form-check-input" type="radio" name="search_type" value="keyword" id="keyword_search" checked>
       <label class="form-check-label" for="keyword_search">Keyword</label>
@@ -237,9 +327,8 @@
       <label class="form-check-label" for="vidwan_search">Vidwan</label>
     </div>
 
-    <!-- Input + Dropdown -->
     <div class="input-group">
-      <input type="text" name="keyword" placeholder="Enter keyword or name or Vidwan-ID">
+      <input type="text" id="1" name="keyword" placeholder="Enter keyword or name or Vidwan-ID">
       <select name="institution">
         <option value="all">All Institutions</option>
         <option value="IITM">IITM</option>
@@ -264,7 +353,14 @@
     <input type="submit" value="Search">
   </form>
 
-  <!-- Loading overlay -->
+  <div class="about">
+    <h2>About Q-Connect</h2>
+    <p>
+      QConnect is a smart search tool designed to help you discover researchers working in quantum science across LI/MI
+      institutes. Use keyword or name-based search to explore profiles, collaborations, and emerging talent.
+    </p>
+  </div>
+
   <div id="loadingOverlay" class="loading-overlay" role="status" aria-live="polite">
     <div class="loading-box">
       <div class="spinner" aria-hidden="true"></div>
@@ -275,27 +371,11 @@
   <script>
     (function () {
       const overlay = document.getElementById('loadingOverlay');
-
-      function showOverlay() {
-        if (overlay) overlay.style.display = 'flex';
-      }
-
-      function hideOverlay() {
-        if (overlay) overlay.style.display = 'none';
-      }
-
-      // Show overlay when the form is submitted
+      function showOverlay() { overlay.style.display = 'flex'; }
+      function hideOverlay() { overlay.style.display = 'none'; }
       const form = document.querySelector('form');
-      if (form) {
-        form.addEventListener('submit', function () {
-          showOverlay();
-        });
-      }
-
-      // Hide overlay when page unload completes (safety)
-      window.addEventListener('pageshow', function () {
-        hideOverlay();
-      });
+      if (form) form.addEventListener('submit', () => showOverlay());
+      window.addEventListener('pageshow', hideOverlay);
     })();
   </script>
 </body>
