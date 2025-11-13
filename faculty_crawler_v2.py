@@ -31,7 +31,7 @@ class FastFacultyCrawlerV2:
         self.cache_file = os.path.join("/tmp", "faculty_data_cache.json")
         self.cache_expiration_seconds = 1 * 60 * 60  # 1 hour
 
-    # ✅ FINAL WORKING SETUP DRIVER (Only change)
+    # ✅ FINAL WORKING SETUP DRIVER
     def setup_driver(self):
         chromedriver_autoinstaller.install()
 
@@ -294,6 +294,7 @@ class FastFacultyCrawlerV2:
             print(f"[EXCEL SAVED] {file}")
         except Exception as e:
             print("[ERROR Saving Excel]", e)
+
     def _is_cache_valid(self):
         if not os.path.exists(self.cache_file):
             return False
@@ -385,41 +386,11 @@ class FastFacultyCrawlerV2:
 
         print(f"[DONE] Total time: {time.time() - start:.2f} sec")
 
-        return [{k: v for k, v in p.items() if k != "html_content"} for p in filtered]
+        return [{
+            k: v for k, v in p.items() if k != "html_content"
+        } for p in filtered]
 
 
-# ✅ FINAL Render-Compatible setup_driver INSIDE CLASS
-def setup_driver(self):
-    import chromedriver_autoinstaller
-    chromedriver_autoinstaller.install()
-
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-notifications")
-    options.add_argument("--disable-popup-blocking")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--window-size=1920x1080")
-
-    # 🟢 Chrome binary location on Render
-    options.binary_location = "/usr/bin/google-chrome"
-
-    prefs = {
-        'profile.managed_default_content_settings.images': 2,
-        'profile.default_content_settings.popups': 0,
-        'profile.default_content_setting_values.notifications': 2
-    }
-    options.add_experimental_option("prefs", prefs)
-
-    driver = webdriver.Chrome(service=Service(), options=options)
-    driver.set_script_timeout(30)
-    driver.implicitly_wait(10)
-    return driver
-
-
-# Keep your main() exactly the same
 def main():
     urls = [
         "https://iitm.irins.org", "https://iith.irins.org", "https://iiti.irins.org",
