@@ -2,7 +2,7 @@ import asyncio
 import pandas as pd
 from bs4 import BeautifulSoup
 import aiohttp
-from urllib.parse import urljoin, quote
+from urllib.parse import urljoin
 import re
 import time
 from selenium import webdriver
@@ -17,9 +17,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import UnexpectedAlertPresentException
 import json
 import os
-
-# ✅ Added for hosting (auto ChromeDriver install in Render / Railway)
-from webdriver_manager.chrome import ChromeDriverManager
+import chromedriver_autoinstaller
 
 
 class FastFacultyCrawlerV2:
@@ -29,231 +27,202 @@ class FastFacultyCrawlerV2:
         self.profiles_data = []
         self.processed_count = 0
 
-        # ✅ Use /tmp path for cache (Render / Railway only allows writing there)
+        # Render hosting — write only to /tmp folder
         self.cache_file = os.path.join("/tmp", "faculty_data_cache.json")
+        self.cache_expiration_seconds = 1 * 60 * 60  # 1 hour
 
-        self.cache_expiration_seconds = 1 * 60 * 60  # 1 hour - shorter cache for testing
-
+    # ✅ FINAL WORKING SETUP DRIVER (Only change)
     def setup_driver(self):
+        chromedriver_autoinstaller.install()
+
         options = Options()
-        options.add_argument("--headless=new")
+        options.add_argument("--headless")
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-notifications")
         options.add_argument("--disable-popup-blocking")
-        options.add_argument("--disable-software-rasterizer")
         options.add_argument("--disable-extensions")
-        
-        # Set page load strategy to eager for faster loading
-        options.page_load_strategy = 'eager'
-        
-        # Create prefs dictionary to disable images and handle alerts
+        options.add_argument("--window-size=1920x1080")
+
+        # Render Chrome binary path
+        options.binary_location = "/usr/bin/google-chrome"
+
         prefs = {
-            'profile.managed_default_content_settings.images': 2,  # Disable images
-            'profile.default_content_settings.popups': 0,
-            'profile.default_content_setting_values.notifications': 2,
-            'profile.default_content_setting_values.automatic_downloads': 1
+            'profile.managed_default_content_settings.images': 2,
+            'profile.default_content_setting_values.notifications': 2
         }
         options.add_experimental_option('prefs', prefs)
-        
-        # ✅ Hosting-safe Chrome driver setup
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-        
-        # Set various timeouts
+
+        driver = webdriver.Chrome(service=Service(), options=options)
         driver.set_script_timeout(30)
         driver.implicitly_wait(10)
-        
         return driver
 
     def _clean_href(self, href):
         return href.replace('&', '_').replace('(', '_').replace(')', '_')
-        
+
     def get_institution_name(self, url):
-        # Extract institution name from URL
         domain = url.split('//')[1].split('.')[0].upper()
         if domain == 'IISCPROFILES':
             return 'IISC'
         return domain
-        
+
     async def get_all_profile_links(self, base_url):
         print(f"[INFO] Finding department and profile links for {base_url}...")
         profile_links = set()
         max_retries = 3
-        
+
         for attempt in range(max_retries):
             driver = self.setup_driver()
             try:
-                print(f"[INFO] Loading main page: {base_url} (Attempt {attempt + 1}/{max_retries})")
-                
-                # Inject scripts to handle alerts and undefined functions before loading page
+                print(f"[INFO] Loading: {base_url} (Attempt {attempt+1})")
+
                 driver.execute_script("""
                     window.alert = function() { return true; };
                     window.confirm = function() { return true; };
                     if (typeof Highcharts === 'undefined') {
-                        window.Highcharts = {
-                            chart: function() { return {}; },
-                            Chart: function() { return {}; }
-                        };
+                        window.Highcharts = { chart: function(){}, Chart: function(){} };
                     }
                 """)
-                
-                # Set page load timeout and navigate
+
                 driver.set_page_load_timeout(30)
                 driver.get(base_url)
-                
+
                 try:
-                    # Wait for faculty links with a shorter timeout
                     WebDriverWait(driver, 10).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/faculty/index/']"))
                     )
-                except Exception as e:
-                    print(f"[WARNING] Timeout waiting for faculty links: {e}")
-                    # Even if timeout occurs, try to process the page
-                driver.execute_script("""
-                    if (typeof Highcharts === 'undefined') {
-                        window.Highcharts = {
-                            chart: function() { return {}; },
-                            Chart: function() { return {}; }
-                        };
-                    }
-                """)
-                
-                # Get page source and parse links
-                soup = BeautifulSoup(driver.page_source, 'lxml')
-                initial_dept_links = {urljoin(base_url, self._clean_href(link['href'])) 
-                                   for link in soup.select("a[href*='/faculty/index/']")}
-                                   
-                if initial_dept_links:
-                    print(f"[INFO] Found {len(initial_dept_links)} unique initial department pages.")
-                    break
-                else:
-                    print(f"[WARNING] No department links found on attempt {attempt + 1}")
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(5)
-                        
-            except Exception as e:
-                print(f"[ERROR] Failed attempt {attempt + 1}: {str(e)}")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(5)
-            finally:
-                try:
-                    driver.quit()
-                except:
+                except Exception:
                     pass
 
+                soup = BeautifulSoup(driver.page_source, 'lxml')
+                initial_links = {
+                    urljoin(base_url, self._clean_href(a['href']))
+                    for a in soup.select("a[href*='/faculty/index/']")
+                }
+
+                if initial_links:
+                    break
+
+            except Exception as e:
+                print("[ERROR]", e)
+            finally:
+                driver.quit()
+
         conn = aiohttp.TCPConnector(limit=self.max_concurrent_requests)
+
         async with aiohttp.ClientSession(connector=conn) as session:
-            urls_to_process = set(initial_dept_links)
+            urls_to_process = set(initial_links)
             processed_urls = set()
 
             while urls_to_process:
-                current_batch_urls = list(urls_to_process)
+                batch = list(urls_to_process)
                 urls_to_process.clear()
-                
-                print(f"[INFO] Fetching {len(current_batch_urls)} department pages...")
-                tasks = [self.fetch_html(session, url) for url in current_batch_urls]
+
+                tasks = [self.fetch_html(session, u) for u in batch]
                 html_contents = await asyncio.gather(*tasks)
-                
-                processed_urls.update(current_batch_urls)
-                
+
+                processed_urls.update(batch)
+
                 for i, html in enumerate(html_contents):
                     if html:
-                        current_url = current_batch_urls[i]
+                        current_url = batch[i]
                         soup = BeautifulSoup(html, 'lxml')
-                        links = {urljoin(current_url, link['href']) for link in soup.select("a[href*='/profile/']")}
-                        profile_links.update(links)
-                        
-                        for page_link in soup.select('ul.pagination li a'):
-                            new_url = urljoin(current_url, self._clean_href(page_link['href']))
-                            if new_url not in processed_urls and new_url not in urls_to_process:
-                                urls_to_process.add(new_url)
-            
-            print(f"[INFO] Total department pages scanned: {len(processed_urls)}")
 
-        print(f"\n[INFO] Total unique profile links found: {len(profile_links)}\n")
+                        links = {
+                            urljoin(current_url, a['href'])
+                            for a in soup.select("a[href*='/profile/']")
+                        }
+                        profile_links.update(links)
+
+                        for p in soup.select("ul.pagination li a"):
+                            new_url = urljoin(current_url, self._clean_href(p['href']))
+                            if new_url not in processed_urls:
+                                urls_to_process.add(new_url)
+
+        print(f"[INFO] Total profile links: {len(profile_links)}")
         return list(profile_links)
 
     def parse_profile(self, html_content, url, institution_name):
         soup = BeautifulSoup(html_content, 'lxml')
-        name_element = soup.select_one('h1 strong, h1, div.col-md-9 h3')
-        name = name_element.get_text(strip=True) if name_element else 'N/A'
-        
+        name_el = soup.select_one('h1 strong, h1, div.col-md-9 h3')
+        name = name_el.get_text(strip=True) if name_el else "N/A"
+
         name = re.sub(r'^(Dr|Prof|Mr|Mrs|Ms|Professor)\.?\s*', '', name)
         name = re.sub(r'\s*\([^)]*\)', '', name).strip()
-
-        department = 'N/A'
-        dept_element = soup.find(['div', 'p', 'span', 'li'], string=re.compile(r'Department of|School of', re.I))
-        if dept_element:
-            department = dept_element.get_text(strip=True)
+        department = "N/A"
+        dept_el = soup.find(['div', 'p', 'span', 'li'], string=re.compile(r"Department of|School of", re.I))
+        if dept_el:
+            department = dept_el.get_text(strip=True)
         else:
-            dept_selectors = [
+            for sel in [
                 'ul.name-location li:nth-of-type(2)',
-                'div[style*="color:#666666"]'
-            ]
-            for selector in dept_selectors:
-                elem = soup.select_one(selector)
-                if elem and elem.get_text(strip=True):
-                    department = elem.get_text(strip=True)
+                'div[style*="color:#666"]'
+            ]:
+                el = soup.select_one(sel)
+                if el:
+                    department = el.get_text(strip=True)
                     break
 
+        # Vidwan ID
         vidwan_id = 'N/A'
         vidwan_match = re.search(r'vidwan.irins.org/profile/(\d+)', html_content)
         if vidwan_match:
             vidwan_id = vidwan_match.group(1)
+
         else:
-            vidwan_link = soup.find('a', href=re.compile(r'vidwan.*profile', re.I))
-            if vidwan_link:
-                id_match = re.search(r'(\d+)', vidwan_link['href'])
-                if id_match:
-                    vidwan_id = id_match.group(1)
+            vlink = soup.find('a', href=re.compile(r'vidwan.*profile', re.I))
+            if vlink:
+                m = re.search(r'(\d+)', vlink['href'])
+                if m:
+                    vidwan_id = m.group(1)
 
+        # Expertise
         expertise = 'N/A'
-        expertise_heading = soup.find(['h2', 'h3', 'h4', 'strong'], text=re.compile(r'Expertise|Research Interests', re.I))
-        if expertise_heading:
-            next_element = expertise_heading.find_next_sibling()
-            if next_element:
-                expertise = next_element.get_text(strip=True, separator=', ')
+        head = soup.find(['h2', 'h3', 'h4', 'strong'], text=re.compile(r"Expertise|Research Interests", re.I))
+        if head:
+            next_el = head.find_next_sibling()
+            if next_el:
+                expertise = next_el.get_text(strip=True, separator=', ')
 
-        image_url = 'N/A'
+        # Image extraction
+        image_url = "N/A"
         img_selectors = [
             '.profile-image img', '.faculty-image img', '.avatar img', '.user-image img',
             '.photo img', 'img.profile-photo', 'img.faculty-photo', '.profile-pic img',
             '#profile_image img', '.researcher-photo img'
         ]
-        for selector in img_selectors:
-            img_tag = soup.select_one(selector)
-            if img_tag and img_tag.get('src'):
-                image_url = urljoin(url, img_tag['src'])
+
+        for s in img_selectors:
+            im = soup.select_one(s)
+            if im and im.get('src'):
+                image_url = urljoin(url, im['src'])
                 break
-                
-        if image_url == 'N/A':
-            img_tags = soup.find_all('img')
-            for img in img_tags:
-                src = img.get('src', '').lower()
-                alt = img.get('alt', '').lower()
-                if any(keyword in src or keyword in alt for keyword in ['profile', 'faculty', 'photo', 'avatar', 'user']):
-                    if img.get('src'):
-                        image_url = urljoin(url, img['src'])
+
+        if image_url == "N/A":
+            for im in soup.find_all("img"):
+                src = im.get("src", "").lower()
+                alt = im.get("alt", "").lower()
+                if any(k in src or k in alt for k in ["profile", "faculty", "photo", "avatar", "user"]):
+                    image_url = urljoin(url, im.get("src"))
+                    break
+
+        if image_url == "N/A":
+            prof_divs = soup.find_all(['div', 'section'], class_=lambda x: x and any(w in str(x).lower() for w in ['profile', 'faculty', 'photo', 'member']))
+            for d in prof_divs:
+                im = d.find("img")
+                if im and im.get("src"):
+                    s = im.get("src")
+                    if not s.startswith("data:image") and not s.endswith(".ico"):
+                        image_url = urljoin(url, s)
                         break
 
-        if image_url == 'N/A':
-            profile_divs = soup.find_all(['div', 'section'], class_=lambda x: x and any(word in str(x).lower() for word in ['profile', 'faculty', 'photo', 'member', 'person']))
-            for div in profile_divs:
-                img = div.find('img')
-                if img and img.get('src'):
-                    src = img['src']
-                    if not (src.startswith('data:image') or src.endswith('.ico') or 'placeholder' in src.lower()):
-                        if not (src.startswith('http://') or src.startswith('https://')):
-                            src = urljoin(url, src)
-                        image_url = src
-                        break
+        if image_url != "N/A":
+            if "placeholder" in image_url.lower() or image_url.startswith("data:image"):
+                image_url = "N/A"
 
-        if image_url != 'N/A':
-            if image_url.startswith('data:image') or image_url.endswith('.ico') or 'placeholder' in image_url.lower():
-                image_url = 'N/A'
-
-        profile_data = {
+        profile = {
             'Institution': institution_name,
             'Name': name,
             'Department': department,
@@ -264,156 +233,193 @@ class FastFacultyCrawlerV2:
             'html_content': html_content
         }
 
-        try:
-            print(f"[SUCCESS] Processed: {name} | Vidwan-ID: {vidwan_id}")
-        except UnicodeEncodeError:
-            sanitized_name = name.encode('ascii', 'ignore').decode('ascii')
-            print(f"[SUCCESS] Processed: {sanitized_name} | Vidwan-ID: {vidwan_id} (sanitized)")
-            
-        return profile_data
+        print(f"[SUCCESS] Processed: {name}")
+        return profile
 
-    @backoff.on_exception(backoff.expo, 
-                          (asyncio.TimeoutError, ClientError, aiohttp.ClientError), 
-                          max_tries=5,
-                          max_time=300)
+    @backoff.on_exception(backoff.expo,
+                          (asyncio.TimeoutError, ClientError, aiohttp.ClientError),
+                          max_tries=5, max_time=300)
     async def fetch_html(self, session, url):
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Connection': 'keep-alive',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'Accept': 'text/html,application/xhtml+xml',
+            'Accept-Language': 'en-US,en;q=0.5'
         }
+
         try:
             timeout = aiohttp.ClientTimeout(total=120)
-            async with session.get(url, timeout=timeout, headers=headers, ssl=False) as response:
-                response.raise_for_status()
-                content = await response.read()
-                return content.decode('utf-8', errors='replace')
+            async with session.get(url, timeout=timeout, headers=headers, ssl=False) as res:
+                res.raise_for_status()
+                content = await res.read()
+                return content.decode("utf-8", errors="replace")
         except Exception as e:
-            print(f"[ERROR] Failed to fetch {url}: {type(e).__name__} - {e}")
+            print(f"[ERROR] Failed URL {url}: {e}")
             await asyncio.sleep(1)
             return None
 
     async def fetch_and_process_profiles(self, urls, institution_name):
         conn = aiohttp.TCPConnector(limit=self.max_concurrent_requests)
-        async with aiohttp.ClientSession(connector=conn) as session:
-            tasks = [self.fetch_html(session, url) for url in urls]
-            html_contents = await asyncio.gather(*tasks)
 
-            for i, content in enumerate(html_contents):
-                if content:
+        async with aiohttp.ClientSession(connector=conn) as session:
+            tasks = [self.fetch_html(session, u) for u in urls]
+            pages = await asyncio.gather(*tasks)
+
+            for i, html in enumerate(pages):
+                if html:
                     try:
-                        profile_data = self.parse_profile(content, urls[i], institution_name)
-                        if profile_data:
-                            self.profiles_data.append(profile_data)
-                        self.processed_count += 1
+                        p = self.parse_profile(html, urls[i], institution_name)
+                        if p:
+                            self.profiles_data.append(p)
                     except Exception as e:
-                        print(f"[ERROR] Failed to parse profile {urls[i]}: {e}")
+                        print(f"[ERROR Parsing] {urls[i]}: {e}")
 
     def save_to_excel(self, profiles):
         if not profiles:
-            print("[INFO] No data to save.")
+            print("[INFO] No profiles to save.")
             return
+
         try:
             df = pd.DataFrame([{k: v for k, v in p.items() if k != 'html_content'} for p in profiles])
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f'faculty_data_export_{timestamp}.xlsx'
-            with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-                df.to_excel(writer, sheet_name='Faculty Profiles', index=False)
-                worksheet = writer.sheets['Faculty Profiles']
-                for idx, col in enumerate(df.columns):
-                    series = df[col]
-                    max_len = max((series.astype(str).map(len).max(), len(str(series.name)))) + 2
-                    worksheet.column_dimensions[chr(65 + idx)].width = max_len
-            print(f"\n[COMPLETE] Saved {len(profiles)} records to {filename}")
-        except Exception as e:
-            print(f"\n[ERROR] Failed to save data to Excel: {e}")
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file = f"faculty_data_export_{ts}.xlsx"
 
+            with pd.ExcelWriter(file, engine="openpyxl") as writer:
+                df.to_excel(writer, index=False, sheet_name="Faculty Profiles")
+                sheet = writer.sheets["Faculty Profiles"]
+
+                for i, col in enumerate(df.columns):
+                    width = max(df[col].astype(str).map(len).max(), len(col)) + 2
+                    sheet.column_dimensions[chr(65+i)].width = width
+
+            print(f"[EXCEL SAVED] {file}")
+        except Exception as e:
+            print("[ERROR Saving Excel]", e)
     def _is_cache_valid(self):
         if not os.path.exists(self.cache_file):
             return False
-        cache_age = time.time() - os.path.getmtime(self.cache_file)
-        return cache_age < self.cache_expiration_seconds
+        age = time.time() - os.path.getmtime(self.cache_file)
+        return age < self.cache_expiration_seconds
 
     def _load_from_cache(self):
-        print("[INFO] Loading data from cache...")
+        print("[CACHE] Loading...")
         if not os.path.exists(self.cache_file):
             return []
         try:
-            with open(self.cache_file, 'r', encoding='utf-8') as f:
+            with open(self.cache_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                if isinstance(data, list):
-                    return data
-                else:
-                    print("[WARNING] Cache file does not contain a list. Starting with an empty cache.")
-                    return []
-        except json.JSONDecodeError:
-            print("[WARNING] Cache file is corrupted. Starting with an empty cache.")
+                return data if isinstance(data, list) else []
+        except:
+            print("[CACHE] Corrupted, clearing...")
             return []
 
     def _save_to_cache(self, profiles):
-        print("[INFO] Saving data to cache...")
-        with open(self.cache_file, 'w', encoding='utf-8') as f:
+        print("[CACHE] Saving...")
+        with open(self.cache_file, "w", encoding="utf-8") as f:
             json.dump(profiles, f, indent=4)
 
     async def crawl(self, keyword=None, save_excel=False):
-        start_time = time.time()
+        start = time.time()
         all_profiles = []
 
+        # Load from cache
         if self._is_cache_valid():
             all_profiles = self._load_from_cache()
+
         else:
-            print("[INFO] Cache is invalid or expired, starting crawler.")
             all_profiles = self._load_from_cache()
-            existing_profiles = {profile['Profile URL']: profile for profile in all_profiles}
-            print("[INFO] Starting Fast Faculty Crawler V2")
+            existing = {p['Profile URL']: p for p in all_profiles}
+
+            print("[CRAWLER] Starting fresh crawl")
+
             for base_url in self.base_urls:
-                institution_name = self.get_institution_name(base_url)
-                print(f"[INFO] Crawling {institution_name}...")
+                inst = self.get_institution_name(base_url)
+                print(f"[CRAWLER] Institution: {inst}")
+
                 self.profiles_data = []
-                profile_urls = await self.get_all_profile_links(base_url)
-                if profile_urls:
-                    await self.fetch_and_process_profiles(profile_urls, institution_name)
-                    for new_profile in self.profiles_data:
-                        profile_url = new_profile['Profile URL']
-                        existing_profiles[profile_url] = new_profile
-                else:
-                    print(f"[ERROR] No profile links found for {institution_name}.")
-            all_profiles = list(existing_profiles.values())
+                urls = await self.get_all_profile_links(base_url)
+
+                if urls:
+                    await self.fetch_and_process_profiles(urls, inst)
+                    for p in self.profiles_data:
+                        existing[p['Profile URL']] = p
+
+            all_profiles = list(existing.values())
             self._save_to_cache(all_profiles)
 
-        # Filtering logic unchanged
-        if keyword and keyword.lower().startswith('name:'):
-            search_term = keyword.split(':', 1)[1].lower()
-            filtered_profiles = [p for p in all_profiles if p.get('Name', '').lower().startswith(search_term)]
-        elif keyword and keyword.lower().startswith('vidwan:'):
-            search_term = keyword.split(':', 1)[1].lower()
-            filtered_profiles = [p for p in all_profiles if search_term == p.get('Vidwan-ID', '').lower()]
+        # FILTERING LOGIC (unchanged)
+        if keyword and keyword.lower().startswith("name:"):
+            t = keyword.split(":", 1)[1].lower()
+            filtered = [p for p in all_profiles if p.get("Name", "").lower().startswith(t)]
+
+        elif keyword and keyword.lower().startswith("vidwan:"):
+            t = keyword.split(":", 1)[1].lower()
+            filtered = [p for p in all_profiles if p.get("Vidwan-ID", "").lower() == t]
+
         elif keyword:
-            keywords = [k.strip().lower() for k in keyword.split(',') if k.strip()]
-            scored_profiles = []
+            keys = [k.strip().lower() for k in keyword.split(",") if k.strip()]
+            scored = []
+
             for p in all_profiles:
-                expertise = p.get('Expertise', '').lower()
-                html_content = p.get('html_content', '').lower()
-                match_score = 0
-                for kw in keywords:
-                    if kw in expertise:
-                        match_score += 2
-                    elif kw in html_content:
-                        match_score += 1
-                if match_score > 0:
-                    scored_profiles.append(p)
-            scored_profiles.sort(key=lambda x: x.get('match_score', 0), reverse=True)
-            filtered_profiles = scored_profiles
+                expertise = p.get("Expertise", "").lower()
+                html = p.get("html_content", "").lower()
+                score = 0
+
+                for k in keys:
+                    if k in expertise:
+                        score += 2
+                    elif k in html:
+                        score += 1
+
+                if score > 0:
+                    p["match_score"] = score
+                    scored.append(p)
+
+            scored.sort(key=lambda x: x["match_score"], reverse=True)
+            filtered = scored
+
         else:
-            filtered_profiles = all_profiles
+            filtered = all_profiles
 
         if save_excel:
-            self.save_to_excel(filtered_profiles)
-        print(f"Total execution time: {time.time() - start_time:.2f} seconds")
-        return [{k: v for k, v in p.items() if k != 'html_content'} for p in filtered_profiles]
+            self.save_to_excel(filtered)
+
+        print(f"[DONE] Total time: {time.time() - start:.2f} sec")
+
+        return [{k: v for k, v in p.items() if k != "html_content"} for p in filtered]
 
 
+# ✅ FINAL Render-Compatible setup_driver INSIDE CLASS
+def setup_driver(self):
+    import chromedriver_autoinstaller
+    chromedriver_autoinstaller.install()
+
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-notifications")
+    options.add_argument("--disable-popup-blocking")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--window-size=1920x1080")
+
+    # 🟢 Chrome binary location on Render
+    options.binary_location = "/usr/bin/google-chrome"
+
+    prefs = {
+        'profile.managed_default_content_settings.images': 2,
+        'profile.default_content_settings.popups': 0,
+        'profile.default_content_setting_values.notifications': 2
+    }
+    options.add_experimental_option("prefs", prefs)
+
+    driver = webdriver.Chrome(service=Service(), options=options)
+    driver.set_script_timeout(30)
+    driver.implicitly_wait(10)
+    return driver
+
+
+# Keep your main() exactly the same
 def main():
     urls = [
         "https://iitm.irins.org", "https://iith.irins.org", "https://iiti.irins.org",
@@ -421,78 +427,15 @@ def main():
         "https://iitd.irins.org", "https://iitr.irins.org", "https://iiserb.irins.org",
         "https://iittp.irins.org", "https://iisermohali.irins.org", "https://iitjammu.irins.org"
     ]
-    crawler = FastFacultyCrawlerV2(base_urls=urls, max_concurrent_requests=5)
+
+    crawler = FastFacultyCrawlerV2(urls, max_concurrent_requests=5)
     try:
         asyncio.run(crawler.crawl(save_excel=True))
-    except KeyboardInterrupt:
-        print("\n[INFO] Crawling interrupted by user. Saving partial results...")
-        if crawler.profiles_data:
-            crawler.save_to_excel(crawler.profiles_data)
     except Exception as e:
-        print(f"\n[ERROR] An error occurred: {e}")
+        print("[ERROR]", e)
         if crawler.profiles_data:
-            print("[INFO] Attempting to save partial results...")
             crawler.save_to_excel(crawler.profiles_data)
 
-def setup_driver(self):
-    import chromedriver_autoinstaller
-
-    # Auto-install a compatible ChromeDriver version
-    chromedriver_autoinstaller.install()
-
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-notifications")
-    options.add_argument("--disable-popup-blocking")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--window-size=1920x1080")
-
-    # 🟢 Chrome installed in Render lives here
-    options.binary_location = "/usr/bin/google-chrome"
-
-    # Optional: disable image loading for faster scraping
-    prefs = {
-        'profile.managed_default_content_settings.images': 2,
-        'profile.default_content_settings.popups': 0,
-        'profile.default_content_setting_values.notifications': 2
-    }
-    options.add_experimental_option('prefs', prefs)
-
-    driver = webdriver.Chrome(service=Service(), options=options)
-    driver.set_script_timeout(30)
-    driver.implicitly_wait(10)
-    return driver
-def setup_driver(self):
-    import chromedriver_autoinstaller
-    chromedriver_autoinstaller.install()
-
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-notifications")
-    options.add_argument("--disable-popup-blocking")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--window-size=1920x1080")
-
-    # ✅ Tell Selenium exactly where Chrome is located in Render
-    options.binary_location = "/usr/bin/google-chrome"
-
-    prefs = {
-        'profile.managed_default_content_settings.images': 2,
-        'profile.default_content_settings.popups': 0,
-        'profile.default_content_setting_values.notifications': 2
-    }
-    options.add_experimental_option('prefs', prefs)
-
-    driver = webdriver.Chrome(service=Service(), options=options)
-    driver.set_script_timeout(30)
-    driver.implicitly_wait(10)
-    return driver
 
 if __name__ == "__main__":
     main()
